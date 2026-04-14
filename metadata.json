@@ -1,0 +1,5 @@
+{
+  "name": "Chanakya AI",
+  "description": "An immersive AI debate system where two specialized agents discuss and challenge topics in a live voice-first experience.",
+  "requestFramePermissions": ["microphone"]
+}
