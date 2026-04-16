@@ -79,12 +79,13 @@ export default function App() {
   const [history, setHistory] = useState<DebateSession[]>([]);
   const [activeSessionToResume, setActiveSessionToResume] = useState<DebateSession | null>(null);
   const [isTyping, setIsTyping] = useState<'explainer' | 'challenger' | null>(null);
-  const [speakingAgent, setSpeakingAgent] = useState<'explainer' | 'challenger' | null>(null);
+  const [speakingAgent, setSpeakingAgent] = useState<'explainer' | 'challenger' | 'moderator' | null>(null);
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(true);
   const [isPaused, setIsPaused] = useState(false);
   const [currentlySpeakingMessageId, setCurrentlySpeakingMessageId] = useState<string | null>(null);
   const [revealedScoreIds, setRevealedScoreIds] = useState<Set<string>>(new Set());
   const [isVoiceControlActive, setIsVoiceControlActive] = useState(false);
+  const [isQuotaExceeded, setIsQuotaExceeded] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
@@ -374,7 +375,7 @@ export default function App() {
         source.connect(audioCtx.destination);
         
         currentAudioSourceRef.current = source;
-        setSpeakingAgent(role === 'moderator' ? 'explainer' : role);
+        setSpeakingAgent(role);
         
         source.onended = () => {
           setSpeakingAgent(null);
@@ -479,26 +480,43 @@ export default function App() {
     // 1. MODERATOR INTRO (Nova)
     if (activeSession.messages.length === 1) { // Only if it's the very start
       setIsTyping('explainer'); // Placeholder
-      const introPrompt = `You are Nova, the Moderator. Start a futurist AI debate on the topic: "${activeSession.topic}". 
-      Introduce Paaro (The Explainer: calm, intelligent, Hinglish) and Vinod (The Challenger: aggressive, logical).
-      Keep it short, professional, and exciting. Language: ${LANGUAGES.find(l => l.id === activeSession.language)?.name}.`;
-      
-      const introResult = await ai.models.generateContent({
-        model: geminiModel,
-        contents: introPrompt,
-        config: { temperature: 0.7 }
-      });
-      const introText = introResult.text || "Welcome to the Chanakya AI Stage.";
-      const introMsg: Message = {
-        id: `moderator-intro-${Date.now()}`,
-        role: 'user', // UI shows user/system as neutral
-        content: `[Moderator Nova]: ${introText}`,
-        timestamp: Date.now()
-      };
-      activeSession = { ...activeSession, messages: [...activeSession.messages, introMsg] };
-      setSession(activeSession);
-      setIsTyping(null);
-      await speak(introText, 'moderator', introMsg.id);
+      try {
+        const introPrompt = `You are Nova, the Moderator. Start a futurist AI debate on the topic: "${activeSession.topic}". 
+        Introduce Paaro (The Explainer: calm, intelligent, Hinglish) and Vinod (The Challenger: aggressive, logical).
+        Keep it short, professional, and exciting. Language: ${LANGUAGES.find(l => l.id === activeSession.language)?.name}.`;
+        
+        const introResult = await ai.models.generateContent({
+          model: geminiModel,
+          contents: introPrompt,
+          config: { temperature: 0.7 }
+        });
+        setIsQuotaExceeded(false);
+        const introText = introResult.text || "Welcome to the Chanakya AI Stage.";
+        const introMsg: Message = {
+          id: `moderator-intro-${Date.now()}`,
+          role: 'user', // UI shows user/system as neutral
+          content: `[Moderator Nova]: ${introText}`,
+          timestamp: Date.now()
+        };
+        activeSession = { ...activeSession, messages: [...activeSession.messages, introMsg] };
+        setSession(activeSession);
+        setIsTyping(null);
+        await speak(introText, 'moderator', introMsg.id);
+      } catch (error: any) {
+        console.error("Moderator intro failed:", error);
+        if (error?.message?.includes('429') || error?.status === 'RESOURCE_EXHAUSTED' || JSON.stringify(error).includes('429')) {
+          setIsQuotaExceeded(true);
+        }
+        setIsTyping(null);
+        const errorMsg: Message = {
+          id: `error-${Date.now()}`,
+          role: 'user',
+          content: `[System Error]: Failed to start the debate. Please try again or check your connection.`,
+          timestamp: Date.now()
+        };
+        setSession(prev => ({ ...prev, status: 'idle', messages: [...prev.messages, errorMsg] }));
+        return;
+      }
     }
 
     const startTurn = Math.floor(activeSession.currentTurn / 2);
@@ -670,6 +688,7 @@ export default function App() {
       });
 
       const summary = result.text || "";
+      setIsQuotaExceeded(false);
       const sessionWithSummary = { ...finalSession, summary };
       setSession(sessionWithSummary);
       
@@ -689,8 +708,11 @@ export default function App() {
       );
       localStorage.setItem('chanakya_history', JSON.stringify(newHistory));
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error generating summary:", error);
+      if (error?.message?.includes('429') || error?.status === 'RESOURCE_EXHAUSTED' || JSON.stringify(error).includes('429')) {
+        setIsQuotaExceeded(true);
+      }
     } finally {
       setIsGeneratingSummary(false);
     }
@@ -755,14 +777,18 @@ export default function App() {
         }
       });
       
+      setIsQuotaExceeded(false); // Clear if successful
       const result = JSON.parse(response.text || "{}");
       return {
         content: result.content || "I'm sorry, I couldn't generate a response.",
         score: result.score || 0,
         scoreReason: result.scoreReason || ""
       };
-    } catch (error) {
+    } catch (error: any) {
       console.error("Gemini API Error:", error);
+      if (error?.message?.includes('429') || error?.status === 'RESOURCE_EXHAUSTED' || JSON.stringify(error).includes('429')) {
+        setIsQuotaExceeded(true);
+      }
       return {
         content: "An error occurred while connecting to the AI engine.",
         score: 0,
@@ -1081,6 +1107,19 @@ export default function App() {
                 Watch two specialized AI agents debate and challenge each other in a live voice-first experience.
               </motion.p>
             </motion.div>
+
+            {isQuotaExceeded && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="w-full max-w-2xl bg-red-500/10 border border-red-500/20 p-4 rounded-2xl flex items-center gap-3 text-red-500"
+              >
+                <ShieldAlert className="w-5 h-5 shrink-0" />
+                <div className="text-xs font-bold uppercase tracking-wider">
+                  AI Quota Exceeded. Please try again in 24 hours or use a different topic.
+                </div>
+              </motion.div>
+            )}
 
             <motion.div 
               initial={{ opacity: 0, scale: 0.95 }}
@@ -1426,12 +1465,24 @@ export default function App() {
                 {session.messages.some(m => m.content.startsWith('[Moderator Nova]')) && (
                   <motion.div
                     initial={{ opacity: 0, y: -20, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    animate={{ 
+                      opacity: 1, 
+                      y: 0, 
+                      scale: speakingAgent === 'moderator' ? 1.02 : 1 
+                    }}
                     exit={{ opacity: 0, y: -20, scale: 0.95 }}
-                    className={`p-4 rounded-[24px] border border-orange-500/20 bg-orange-500/5 backdrop-blur-md flex items-center gap-4 mb-2 shadow-[0_0_40px_rgba(249,115,22,0.05)]`}
+                    className={`p-4 rounded-[24px] border transition-all duration-500 backdrop-blur-md flex items-center gap-4 mb-2 ${
+                      speakingAgent === 'moderator'
+                        ? 'bg-orange-500/10 border-orange-500/50 shadow-[0_0_40px_rgba(249,115,22,0.1)]'
+                        : 'bg-orange-500/5 border-orange-500/20 shadow-[0_0_40px_rgba(249,115,22,0.05)]'
+                    }`}
                   >
-                    <div className="w-12 h-12 rounded-full bg-orange-500/20 flex items-center justify-center border border-orange-500/40 shrink-0">
-                      <Mic2 className="w-6 h-6 text-orange-500" />
+                    <div className={`w-12 h-12 rounded-full flex items-center justify-center border shrink-0 transition-all duration-500 ${
+                      speakingAgent === 'moderator'
+                        ? 'bg-orange-500/30 border-orange-500'
+                        : 'bg-orange-500/20 border-orange-500/40'
+                    }`}>
+                      <Mic2 className={`w-6 h-6 transition-colors duration-500 ${speakingAgent === 'moderator' ? 'text-orange-400' : 'text-orange-500'}`} />
                     </div>
                     <div className="flex-1">
                       <div className="text-[10px] font-black uppercase tracking-[0.3em] text-orange-500 mb-1">Moderator Nova</div>
@@ -1439,6 +1490,18 @@ export default function App() {
                         {session.messages.filter(m => m.content.startsWith('[Moderator Nova]')).pop()?.content.replace('[Moderator Nova]: ', '')}
                       </div>
                     </div>
+                    {speakingAgent === 'moderator' && (
+                      <div className="flex gap-1 pr-4">
+                        {[...Array(3)].map((_, i) => (
+                          <motion.div
+                            key={i}
+                            animate={{ height: [4, 12, 4] }}
+                            transition={{ repeat: Infinity, duration: 0.5, delay: i * 0.1 }}
+                            className="w-1 bg-orange-500 rounded-full"
+                          />
+                        ))}
+                      </div>
+                    )}
                   </motion.div>
                 )}
               </AnimatePresence>
