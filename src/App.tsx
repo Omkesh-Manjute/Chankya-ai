@@ -40,7 +40,7 @@ import Markdown from 'react-markdown';
 const MAX_TURNS = 6;
 
 const EXPLAINER_ARCHETYPES = [
-  { id: 'paro', name: 'Paro (The Explainer)', description: 'Calm, intelligent, and friendly teacher. Hinglish expertise.' },
+  { id: 'paaro', name: 'Paaro (The Explainer)', description: 'Calm, intelligent, and friendly teacher. Hinglish expertise.' },
   { id: 'teacher', name: 'Patient Teacher', description: 'Simple, clear, and encouraging.' },
   { id: 'philosopher', name: 'Calm Philosopher', description: 'Deep, reflective, and balanced.' }
 ];
@@ -61,9 +61,11 @@ const LANGUAGES = [
 
 export default function App() {
   const [topic, setTopic] = useState('');
-  const [explainerArchetype, setExplainerArchetype] = useState('paro');
+  const [explainerArchetype, setExplainerArchetype] = useState('paaro');
   const [challengerArchetype, setChallengerArchetype] = useState('vinod');
   const [language, setLanguage] = useState('hinglish');
+  const [explainerGender, setExplainerGender] = useState<'male' | 'female'>('female');
+  const [challengerGender, setChallengerGender] = useState<'male' | 'female'>('male');
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [maxTurns, setMaxTurns] = useState(MAX_TURNS);
   const [session, setSession] = useState<DebateSession>({
@@ -401,9 +403,13 @@ export default function App() {
       const languageName = LANGUAGES.find(l => l.id === session.language)?.name || 'English';
       
       let voiceName = 'Zephyr';
-      if (role === 'explainer') voiceName = 'Aoede'; // Female, clear for Paro
-      if (role === 'challenger') voiceName = 'Kore'; // Deep, energetic for Vinod
-      if (role === 'moderator') voiceName = 'Orpheus'; // Professional for Nova
+      if (role === 'explainer') {
+        voiceName = explainerGender === 'female' ? 'Aoede' : 'Iapetus';
+      } else if (role === 'challenger') {
+        voiceName = challengerGender === 'female' ? 'Kore' : 'Fenrir';
+      } else if (role === 'moderator') {
+        voiceName = 'Zephyr';
+      }
 
       const response = await ai.models.generateContent({
         model: ttsModel,
@@ -474,7 +480,7 @@ export default function App() {
     if (activeSession.messages.length === 1) { // Only if it's the very start
       setIsTyping('explainer'); // Placeholder
       const introPrompt = `You are Nova, the Moderator. Start a futurist AI debate on the topic: "${activeSession.topic}". 
-      Introduce Paro (The Explainer: calm, intelligent, Hinglish) and Vinod (The Challenger: aggressive, logical).
+      Introduce Paaro (The Explainer: calm, intelligent, Hinglish) and Vinod (The Challenger: aggressive, logical).
       Keep it short, professional, and exciting. Language: ${LANGUAGES.find(l => l.id === activeSession.language)?.name}.`;
       
       const introResult = await ai.models.generateContent({
@@ -589,7 +595,7 @@ export default function App() {
     try {
       const lastMsg = activeSession.messages[activeSession.messages.length - 1];
       const evaluatorRole = lastMsg.role === 'explainer' ? 'challenger' : 'explainer';
-      const judgeName = evaluatorRole === 'challenger' ? 'Vinod' : 'Paro';
+      const judgeName = evaluatorRole === 'challenger' ? 'Vinod' : 'Paaro';
       const prompt = `You are ${judgeName}, acting as the final judge. Evaluate the final point made by the ${lastMsg.role}: "${lastMsg.content}".
       Assign a score (1-10) and a brief reason. Return JSON only.`;
       
@@ -651,7 +657,7 @@ export default function App() {
       .map(m => `${m.role.toUpperCase()}: ${m.content}`)
       .join('\n\n');
 
-    const prompt = `Topic: ${finalSession.topic}\n\nDebate History:\n${historyText}\n\nYou are Nova, the smart Moderator and Host. Provide a neutral, professional summary of the key arguments from Paro (Explainer) and Vinod (Challenger). State the overall outcome. Use bullet points. Keep it professional and insightful. The summary MUST be in ${languageName}. Output as Moderator Nova speaking to the audience.`;
+    const prompt = `Topic: ${finalSession.topic}\n\nDebate History:\n${historyText}\n\nYou are Nova, the smart Moderator and Host. Provide a neutral, professional summary of the key arguments from Paaro (Explainer) and Vinod (Challenger). State the overall outcome. Use bullet points. Keep it professional and insightful. The summary MUST be in ${languageName}. Output as Moderator Nova speaking to the audience.`;
 
     try {
       const result = await ai.models.generateContent({
@@ -698,12 +704,12 @@ export default function App() {
     const languageName = LANGUAGES.find(l => l.id === currentSession.language)?.name || 'English';
 
     let systemPrompt = role === 'explainer' 
-      ? `You are Paro, the helpful AI teacher. You are calm, intelligent, and friendly. Explain concepts in simple Hinglish (Hindi + English mix). Always try to simplify and help beginners. Keep it concise, fast-paced, and strictly in ${languageName === 'Hinglish (Hindi + English)' ? 'Hinglish' : languageName}.
+      ? `You are Paaro, the helpful AI teacher. You are calm, intelligent, and friendly. Explain concepts in simple Hinglish (Hindi + English mix). Always try to simplify and help beginners. Keep it concise, fast-paced, and strictly in ${languageName === 'Hinglish (Hindi + English)' ? 'Hinglish' : languageName}.
          If you are responding to Vinod, address his points calmly. 
          Additionally, evaluate the previous message from Vinod and assign a score (1-10).`
       : `You are Vinod, a critical thinker and challenger. You are aggressive, logical, and slightly sarcastic. You use sharp logic to challenge ideas. Keep it fast, energetic, and strictly in ${languageName === 'Hinglish (Hindi + English)' ? 'Hinglish' : languageName}.
-         Challenge Paro to be more precise and point out gaps.
-         Additionally, evaluate the previous message from Paro and assign a score (1-10).`;
+         Challenge Paaro to be more precise and point out gaps.
+         Additionally, evaluate the previous message from Paaro and assign a score (1-10).`;
 
     if (languageName === 'Hinglish (Hindi + English)') {
       systemPrompt += `\n\nSTYLE NOTE: Use a natural mix of Hindi and English. Use expressive dialogue with natural pauses (...) and emotional emphasis.`;
@@ -1263,6 +1269,35 @@ export default function App() {
                   ))}
                 </div>
               </div>
+
+              {/* Voice Gender Controls */}
+              <div className={`border p-6 rounded-[32px] backdrop-blur-sm transition-colors duration-500 ${theme === 'dark' ? 'bg-white/[0.02] border-white/5' : 'bg-white border-slate-200 shadow-sm'}`}>
+                <span className={`text-[10px] font-black uppercase tracking-[0.3em] block mb-4 ml-2 ${theme === 'dark' ? 'text-blue-500/60' : 'text-blue-600/60'}`}>Paaro Voice</span>
+                <div className={`flex p-1 rounded-2xl gap-1 ${theme === 'dark' ? 'bg-white/5' : 'bg-slate-100'}`}>
+                  <button 
+                    onClick={() => setExplainerGender('male')}
+                    className={`flex-1 py-3 rounded-xl font-bold text-xs transition-all ${explainerGender === 'male' ? 'bg-blue-500 text-black shadow-lg shadow-blue-500/20' : theme === 'dark' ? 'text-white/40 hover:bg-white/5' : 'text-slate-500 hover:bg-slate-200'}`}
+                  >Male</button>
+                  <button 
+                    onClick={() => setExplainerGender('female')}
+                    className={`flex-1 py-3 rounded-xl font-bold text-xs transition-all ${explainerGender === 'female' ? 'bg-blue-500 text-black shadow-lg shadow-blue-500/20' : theme === 'dark' ? 'text-white/40 hover:bg-white/5' : 'text-slate-500 hover:bg-slate-200'}`}
+                  >Female</button>
+                </div>
+              </div>
+
+              <div className={`border p-6 rounded-[32px] backdrop-blur-sm transition-colors duration-500 ${theme === 'dark' ? 'bg-white/[0.02] border-white/5' : 'bg-white border-slate-200 shadow-sm'}`}>
+                <span className={`text-[10px] font-black uppercase tracking-[0.3em] block mb-4 ml-2 ${theme === 'dark' ? 'text-purple-500/60' : 'text-purple-600/60'}`}>Vinod Voice</span>
+                <div className={`flex p-1 rounded-2xl gap-1 ${theme === 'dark' ? 'bg-white/5' : 'bg-slate-100'}`}>
+                  <button 
+                    onClick={() => setChallengerGender('male')}
+                    className={`flex-1 py-3 rounded-xl font-bold text-xs transition-all ${challengerGender === 'male' ? 'bg-purple-500 text-black shadow-lg shadow-purple-500/20' : theme === 'dark' ? 'text-white/40 hover:bg-white/5' : 'text-slate-500 hover:bg-slate-200'}`}
+                  >Male</button>
+                  <button 
+                    onClick={() => setChallengerGender('female')}
+                    className={`flex-1 py-3 rounded-xl font-bold text-xs transition-all ${challengerGender === 'female' ? 'bg-purple-500 text-black shadow-lg shadow-purple-500/20' : theme === 'dark' ? 'text-white/40 hover:bg-white/5' : 'text-slate-500 hover:bg-slate-200'}`}
+                  >Female</button>
+                </div>
+              </div>
             </motion.div>
 
             {activeSessionToResume && (
@@ -1438,7 +1473,7 @@ export default function App() {
                     {EXPLAINER_ARCHETYPES.find(a => a.id === session.explainerArchetype)?.name || 'Module 01'}
                   </span>
                   <h3 className={`text-2xl font-black uppercase tracking-tighter ${theme === 'dark' ? 'text-white/90' : 'text-slate-900'}`}>
-                    {session.explainerArchetype === 'paro' ? 'Paro' : 'Explainer'}
+                    {session.explainerArchetype === 'paaro' ? 'Paaro' : 'Explainer'}
                   </h3>
                 </div>
                 
